@@ -5,15 +5,20 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.firebase.ml.vision.FirebaseVision;
+import com.google.firebase.ml.vision.common.FirebaseVisionImage;
+import com.google.firebase.ml.vision.text.FirebaseVisionText;
+import com.google.firebase.ml.vision.text.FirebaseVisionTextRecognizer;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
@@ -25,7 +30,9 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
+
 
 
 public class MainActivity extends AppCompatActivity {
@@ -35,8 +42,11 @@ public class MainActivity extends AppCompatActivity {
     private static final int MY_PERMISSIONS_REQUEST_CAMERA = 20;
     private static int RESULT_LOAD_IMAGE = 1;
 
-    ImageView mImageView;
-    Uri img_uri;
+    private ImageView mImageView;
+    private Uri img_uri;
+    private Button mTextButton;
+    private TextView mTextView;
+
 
 
     @Override
@@ -47,6 +57,9 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         mImageView = findViewById(R.id.imgView);
+        mTextButton = findViewById(R.id.textButton);
+        mTextView = findViewById(R.id.textView);
+
         //OLD SCHOOL GET IMAGE FROM GALLERY
         Button buttonLoadImage = (Button) findViewById(R.id.uploadButton);
         buttonLoadImage.setOnClickListener(new View.OnClickListener() {
@@ -91,6 +104,15 @@ public class MainActivity extends AppCompatActivity {
                     openCameraApp();
                 }
             }
+        });
+
+        //GET TEXT
+        Button buttonFindText = (Button) findViewById(R.id.textButton);
+        buttonFindText.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View arg0) {
+                    runTextRecognition();
+                }
+
         });
     }
 
@@ -157,6 +179,41 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    private void runTextRecognition() {
+        FirebaseVisionImage image =
+                FirebaseVisionImage.fromBitmap(((BitmapDrawable) mImageView.getDrawable()).getBitmap() );
+        FirebaseVisionTextRecognizer recognizer = FirebaseVision.getInstance()
+                .getOnDeviceTextRecognizer();
+        recognizer.processImage(image)
+                .addOnSuccessListener(
+                        new OnSuccessListener<FirebaseVisionText>() {
+                            public void onSuccess(FirebaseVisionText texts) {
+                                processTextRecognitionResult(texts);
+                            }
+                        })
+                .addOnFailureListener(
+                        new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                e.printStackTrace();
+                            }
+                        });
+    }
+
+    private void processTextRecognitionResult(FirebaseVisionText texts) {
+        mTextView.setText(null);
+        if (texts.getTextBlocks().size() == 0) {
+            mTextView.setText("");
+            return;
+        }
+        for (FirebaseVisionText.TextBlock block : texts.getTextBlocks()
+        ) {
+            mTextView.append(block.getText());
+
+        }
+
     }
 
 
