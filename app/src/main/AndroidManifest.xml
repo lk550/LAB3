@@ -19,7 +19,7 @@
             android:name="com.google.firebase.ml.vision.DEPENDENCIES"
             android:value="label" />
         <activity
-            android:name=".MainActivity"
+            android:name=".MainActivityK"
             android:label="@string/app_name"
             android:theme="@style/AppTheme.NoActionBar">
             <intent-filter>
