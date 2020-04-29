@@ -43,4 +43,5 @@ dependencies {
     implementation 'com.google.firebase:firebase-ml-model-interpreter:22.0.3'
 
 
+
 }
