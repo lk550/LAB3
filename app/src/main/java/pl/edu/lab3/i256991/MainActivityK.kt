@@ -27,7 +27,7 @@ import com.google.firebase.ml.vision.objects.FirebaseVisionObjectDetectorOptions
 import kotlinx.android.synthetic.main.content_main.*
 
 class MainActivityK : AppCompatActivity() {
-    private lateinit var picture_uri: Uri
+    private lateinit var pictureUri: Uri
 
 
     companion object {
@@ -82,17 +82,25 @@ class MainActivityK : AppCompatActivity() {
         }
 
         //GET TEXT
-        textButton.setOnClickListener { extractText() }
-
-        //FIND OBJ
-        objectButton.setOnClickListener{
-            if(!this::picture_uri.isInitialized){
+        textButton.setOnClickListener {
+            if (!this::pictureUri.isInitialized) {
                 Toast.makeText(
                         baseContext, "Please upload a picture first.",
                         Toast.LENGTH_SHORT
                 ).show()
+            } else {
+                extractText()
             }
-            else {
+        }
+
+        //FIND OBJ
+        objectButton.setOnClickListener {
+            if (!this::pictureUri.isInitialized) {
+                Toast.makeText(
+                        baseContext, "Please upload a picture first.",
+                        Toast.LENGTH_SHORT
+                ).show()
+            } else {
                 val image = adjustImage()
                 objectDetection(image)
             }
@@ -109,9 +117,9 @@ class MainActivityK : AppCompatActivity() {
     private fun getImageFromCamera() {
         val values = ContentValues()
         values.put(MediaStore.Images.Media.TITLE, "New photo")
-        picture_uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+        pictureUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
         val takePhotoIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        takePhotoIntent.putExtra(MediaStore.EXTRA_OUTPUT, picture_uri)
+        takePhotoIntent.putExtra(MediaStore.EXTRA_OUTPUT, pictureUri)
         startActivityForResult(takePhotoIntent, REQUEST_IMAGE_CAPTURE)
     }
 
@@ -143,8 +151,8 @@ class MainActivityK : AppCompatActivity() {
 
 
     private fun extractText() {
-        if (imgView.drawable != null && (this::picture_uri.isInitialized)) {
-            textView.setText("")
+        if (imgView.drawable != null) {
+            textView.text = ""
             val bitmap = (imgView.drawable as BitmapDrawable).bitmap
             val image = FirebaseVisionImage.fromBitmap(bitmap)
             val detector = FirebaseVision.getInstance().onDeviceTextRecognizer
@@ -157,7 +165,7 @@ class MainActivityK : AppCompatActivity() {
                         textView.setText("Process failed")
                     }
         } else {
-            Toast.makeText(this, "Select an Image First", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Please upload a picture", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -212,7 +220,7 @@ class MainActivityK : AppCompatActivity() {
     private fun adjustImage(): Bitmap {
 
         val srcImage = FirebaseVisionImage
-                .fromFilePath(baseContext, picture_uri).bitmap
+                .fromFilePath(baseContext, pictureUri).bitmap
 
         // crop image to match imageView's aspect ratio
         val scaleFactor = Math.min(
@@ -235,13 +243,13 @@ class MainActivityK : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK) {
-            picture_uri= data?.data!!
+            pictureUri = data?.data!!
             imgView.setImageURI(data?.data)
             //clear the textView in case Extract Text was previously used
             textView.text = ""
 
         } else if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-           val image = adjustImage()
+            val image = adjustImage()
             imgView.setImageBitmap(image)
             //clear the textView in case Extract Text was previously used
             textView.text = ""
@@ -253,7 +261,7 @@ class MainActivityK : AppCompatActivity() {
 
 //required for the object detector's "draw on image" requirement
 @SuppressLint("ViewConstructor")
-class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject>) : View(context) {
+class DrawingView(context: Context, private var visionObjects: List<FirebaseVisionObject>) : View(context) {
 
     companion object {
 
