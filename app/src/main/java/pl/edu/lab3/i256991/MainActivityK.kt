@@ -1,21 +1,18 @@
 package pl.edu.lab3.i256991
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.graphics.*
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.util.Log
 
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.widget.*
 
@@ -25,24 +22,16 @@ import com.google.firebase.ml.vision.text.FirebaseVisionText
 
 
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.core.view.drawToBitmap
 import com.google.firebase.ml.vision.objects.FirebaseVisionObject
 import com.google.firebase.ml.vision.objects.FirebaseVisionObjectDetectorOptions
 import kotlinx.android.synthetic.main.content_main.*
 
 class MainActivityK : AppCompatActivity() {
-    private var mImageView: ImageView? = null
-    private var img_uri: Uri? = null
-    private var img_bitmap: Bitmap? = null
-    private lateinit var outputFileUri: Uri
+    private lateinit var picture_uri: Uri
 
 
     companion object {
         private const val REQUEST_IMAGE_CAPTURE = 2
-        private const val REQUEST_OBJ_FINDER = 2
         private const val MY_PERMISSIONS_REQUEST_READ_STORAGE = 10
         private const val MY_PERMISSIONS_REQUEST_CAMERA = 20
         private const val RESULT_LOAD_IMAGE = 1
@@ -53,18 +42,16 @@ class MainActivityK : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         //GET IMAGE FROM GALLERY
-        // val buttonLoadImage = findViewById(R.id.uploadButton) as Button
         uploadButton.setOnClickListener {
-            //check runtime permission
+            //check sys OS version
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                        PackageManager.PERMISSION_DENIED) {
-                    //permission denied
+                // system OS > marshmallow
+                if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
+                    //Denied, needs to request for permissions
                     val permissions = arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE);
-                    //show popup to request runtime permission
                     requestPermissions(permissions, MY_PERMISSIONS_REQUEST_READ_STORAGE);
                 } else {
-                    //permission already granted
+                    //Granted
                     pickImageFromGallery();
                 }
             } else {
@@ -81,27 +68,34 @@ class MainActivityK : AppCompatActivity() {
                 // system OS > marshmallow
                 if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED ||
                         checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
-                    //requesting permission
+                    //Denied, needs to request for permissions
                     val permission = arrayOf(Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    //show popup to request permissions
                     requestPermissions(permission, MY_PERMISSIONS_REQUEST_CAMERA)
                 } else {
-                    //permission already granted
-                    openCameraApp()
+                    //Granted
+                    getImageFromCamera()
                 }
             } else {
                 //system OS < marshmallow
-                openCameraApp()
+                getImageFromCamera()
             }
         }
 
         //GET TEXT
-        textButton.setOnClickListener { runTextRecognition() }
+        textButton.setOnClickListener { extractText() }
 
         //FIND OBJ
         objectButton.setOnClickListener{
-            val image = getCapturedImage()
-            runObjectDetection(image)
+            if(!this::picture_uri.isInitialized){
+                Toast.makeText(
+                        baseContext, "Please upload a picture first.",
+                        Toast.LENGTH_SHORT
+                ).show()
+            }
+            else {
+                val image = adjustImage()
+                objectDetection(image)
+            }
         }
     }
 
@@ -112,78 +106,15 @@ class MainActivityK : AppCompatActivity() {
         startActivityForResult(intent, RESULT_LOAD_IMAGE)
     }
 
-    private fun openCameraApp() {
-        /*val values = ContentValues()
-        values.put(MediaStore.Images.Media.TITLE, "New Picture")
-        values.put(MediaStore.Images.Media.DESCRIPTION, "From the Camera")
-        img_uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)*/
-        //val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        //cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, img_uri)
-        //startActivityForResult(cameraIntent, REQUEST_IMAGE_CAPTURE)
-
+    private fun getImageFromCamera() {
         val values = ContentValues()
         values.put(MediaStore.Images.Media.TITLE, "New photo")
-        outputFileUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+        picture_uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
         val takePhotoIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        takePhotoIntent.putExtra(MediaStore.EXTRA_OUTPUT, outputFileUri)
+        takePhotoIntent.putExtra(MediaStore.EXTRA_OUTPUT, picture_uri)
         startActivityForResult(takePhotoIntent, REQUEST_IMAGE_CAPTURE)
     }
 
-    /**
-     * MLKit Object Detection Function
-     */
-    private fun runObjectDetection(bitmap: Bitmap) {
-        // Step 1: create MLKit's VisionImage object
-        val image = FirebaseVisionImage.fromBitmap(bitmap)
-        // Step 2: acquire detector object
-        val options = FirebaseVisionObjectDetectorOptions.Builder()
-                .setDetectorMode(FirebaseVisionObjectDetectorOptions.SINGLE_IMAGE_MODE)
-                .enableMultipleObjects()
-                .enableClassification()
-                .build()
-        val detector = FirebaseVision.getInstance().getOnDeviceObjectDetector(options)
-        // Step 3: feed given image to detector and setup callback
-        detector.processImage(image)
-                .addOnSuccessListener {
-                    // Task completed successfully
-                    // Post-detection processing : draw result
-                   // debugPrint(it)
-                    val drawingView = DrawingView(applicationContext, it)
-                    drawingView.draw(Canvas(bitmap))
-                    runOnUiThread {
-                        imgView.setImageBitmap(bitmap)
-                    }
-                }
-                .addOnFailureListener {
-                    // Task failed with an exception
-                    Toast.makeText(
-                            baseContext, "Oops, something went wrong!",
-                            Toast.LENGTH_SHORT
-                    ).show()
-                }
-
-    }
-
-    private fun debugPrint(visionObjects : List<FirebaseVisionObject>) {
-        val LOG_MOD = "MLKit-ODT"
-        for ((idx, obj) in visionObjects.withIndex()) {
-            val box = obj.boundingBox
-
-            Log.d(LOG_MOD, "Detected object: ${idx} ")
-            Log.d(LOG_MOD, "  Category: ${obj.classificationCategory}")
-            Log.d(LOG_MOD, "  trackingId: ${obj.trackingId}")
-          //  Log.d(LOG_MOD, "  entityId: ${obj.entityid}")
-            Log.d(LOG_MOD, "  boundingBox: (${box.left}, ${box.top}) - (${box.right},${box.bottom})")
-            if (obj.classificationCategory != FirebaseVisionObject.CATEGORY_UNKNOWN) {
-                val confidence: Int = obj.classificationConfidence!!.times(100).toInt()
-                Log.d(LOG_MOD, "  Confidence: ${confidence}%")
-            }
-        }
-    }
-
-
-
-    //handle requested permission result
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         when (requestCode) {
             MY_PERMISSIONS_REQUEST_READ_STORAGE -> {
@@ -193,15 +124,15 @@ class MainActivityK : AppCompatActivity() {
                     //permission from popup granted
                     pickImageFromGallery()
                 } else {
-                    Toast.makeText(this, "Please allow the permission...", Toast.LENGTH_SHORT)
-                            .show()
+                    Toast.makeText(this, "Please allow the permission...", Toast.LENGTH_SHORT).show()
                 }
                 return
             }
             MY_PERMISSIONS_REQUEST_CAMERA -> {
                 // CAMERA
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    openCameraApp()
+                    //permission from popup granted
+                    getImageFromCamera()
                 } else {
                     Toast.makeText(this, "Please allow the permission...", Toast.LENGTH_SHORT).show()
                 }
@@ -211,8 +142,8 @@ class MainActivityK : AppCompatActivity() {
     }
 
 
-    private fun runTextRecognition() {
-        if (imgView.drawable != null) {
+    private fun extractText() {
+        if (imgView.drawable != null && (this::picture_uri.isInitialized)) {
             textView.setText("")
             val bitmap = (imgView.drawable as BitmapDrawable).bitmap
             val image = FirebaseVisionImage.fromBitmap(bitmap)
@@ -220,7 +151,7 @@ class MainActivityK : AppCompatActivity() {
 
             detector.processImage(image)
                     .addOnSuccessListener { firebaseVisionText ->
-                        processTextRecognitionResult(firebaseVisionText)
+                        extractTextResult(firebaseVisionText)
                     }
                     .addOnFailureListener {
                         textView.setText("Process failed")
@@ -231,7 +162,7 @@ class MainActivityK : AppCompatActivity() {
     }
 
 
-    private fun processTextRecognitionResult(texts: FirebaseVisionText) {
+    private fun extractTextResult(texts: FirebaseVisionText) {
         if (texts.textBlocks.size == 0) {
             textView.text = "No Text detected"
             return
@@ -242,14 +173,46 @@ class MainActivityK : AppCompatActivity() {
         }
     }
 
+
+    private fun objectDetection(bitmap: Bitmap) {
+        val image = FirebaseVisionImage.fromBitmap(bitmap)
+        val options = FirebaseVisionObjectDetectorOptions.Builder()
+                .setDetectorMode(FirebaseVisionObjectDetectorOptions.SINGLE_IMAGE_MODE)
+                .enableMultipleObjects()
+                .enableClassification()
+                .build()
+        val detector = FirebaseVision.getInstance().getOnDeviceObjectDetector(options)
+
+        detector.processImage(image)
+                .addOnSuccessListener {
+                    // Task was successful, drawing result
+                    val drawingView = DrawingView(applicationContext, it)
+                    drawingView.draw(Canvas(bitmap))
+                    runOnUiThread {
+                        imgView.setImageBitmap(bitmap)
+                    }
+                }
+                .addOnFailureListener {
+                    // Task failed
+                    Toast.makeText(
+                            baseContext, "Oops, something went wrong!",
+                            Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+    }
+
+
     /**
      * getCapturedImage():
      *     Decodes and center crops the captured image from camera.
      */
-    private fun getCapturedImage(): Bitmap {
+    // Decoding and centering theselected picture is required
+    // in order to make the ML kit work smoothly.
+    private fun adjustImage(): Bitmap {
 
         val srcImage = FirebaseVisionImage
-                .fromFilePath(baseContext, outputFileUri).bitmap
+                .fromFilePath(baseContext, picture_uri).bitmap
 
         // crop image to match imageView's aspect ratio
         val scaleFactor = Math.min(
@@ -266,43 +229,34 @@ class MainActivityK : AppCompatActivity() {
         )
         srcImage.recycle()
         return scaledImage
-
     }
 
     //handle result of picked image
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK) {
-            outputFileUri= data?.data!!
+            picture_uri= data?.data!!
             imgView.setImageURI(data?.data)
+            //clear the textView in case Extract Text was previously used
+            textView.text = ""
 
         } else if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-            //imgView.setImageURI(img_uri)
-           val image = getCapturedImage()
-           // img_bitmap = image
+           val image = adjustImage()
             imgView.setImageBitmap(image)
+            //clear the textView in case Extract Text was previously used
+            textView.text = ""
 
-        } else if (requestCode == REQUEST_OBJ_FINDER && resultCode == RESULT_OK) {
-            //img_bitmap?.let { runObjectDetection(it) }
-            val image = getCapturedImage()
-            runObjectDetection(image)
         }
     }
 
 }
 
-
-/**
- * DrawingView class:
- *    onDraw() function implements drawing
- *     - boundingBox
- *     - Category
- *     - Confidence ( if Category is not CATEGORY_UNKNOWN )
- */
+//required for the object detector's "draw on image" requirement
+@SuppressLint("ViewConstructor")
 class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject>) : View(context) {
 
     companion object {
-        // mapping table for category to strings: drawing strings
+
         val categoryNames: Map<Int, String> = mapOf(
                 FirebaseVisionObject.CATEGORY_UNKNOWN to "Unknown",
                 FirebaseVisionObject.CATEGORY_HOME_GOOD to "Home Goods",
@@ -313,7 +267,7 @@ class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject
         )
     }
 
-    val MAX_FONT_SIZE = 96F
+    private val MAX_FONT_SIZE = 96F
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -321,20 +275,19 @@ class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject
         pen.textAlign = Paint.Align.LEFT
 
         for (item in visionObjects) {
-            // draw bounding box
+            // draw rectangle
             pen.color = Color.RED
             pen.strokeWidth = 8F
             pen.style = Paint.Style.STROKE
             val box = item.getBoundingBox()
             canvas.drawRect(box, pen)
 
-            // Draw result category, and confidence
+            // Draws the result category and confidence
             val tags: MutableList<String> = mutableListOf()
             tags.add("Category: ${categoryNames[item.classificationCategory]}")
             if (item.classificationCategory != FirebaseVisionObject.CATEGORY_UNKNOWN) {
                 tags.add("Confidence: ${item.classificationConfidence!!.times(100).toInt()}%")
             }
-
             var tagSize = Rect(0, 0, 0, 0)
             var maxLen = 0
             var index: Int = -1
@@ -346,7 +299,7 @@ class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject
                 }
             }
 
-            // calculate the right font size
+            // calculates the appropriate font size
             pen.style = Paint.Style.FILL_AND_STROKE
             pen.color = Color.YELLOW
             pen.strokeWidth = 2F
@@ -355,13 +308,13 @@ class DrawingView(context: Context, var visionObjects: List<FirebaseVisionObject
             pen.getTextBounds(tags[index], 0, tags[index].length, tagSize)
             val fontSize: Float = pen.textSize * box.width() / tagSize.width()
 
-            // adjust the font size so texts are inside the bounding box
+            // adjust the font size to fit the texts in the rectangle
             if (fontSize < pen.textSize) pen.textSize = fontSize
 
             var margin = (box.width() - tagSize.width()) / 2.0F
             if (margin < 0F) margin = 0F
 
-            // draw tags onto bitmap (bmp is in upside down format)
+            // draw tags onto bitmap
             for ((idx, txt) in tags.withIndex()) {
                 canvas.drawText(
                         txt, box.left + margin,

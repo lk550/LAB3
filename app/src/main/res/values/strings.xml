@@ -11,4 +11,8 @@
     <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
     <string name="find_text">Find Text</string>
     <string name="find_object">Find Object</string>
+    <string name="upload_button">Pick image</string>
+    <string name="camera_button">Take a Photo</string>
+    <string name="extract_text">Extract Text</string>
+    <string name="detect_object">Detect Object</string>
 </resources>
