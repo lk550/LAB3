@@ -5,12 +5,15 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.util.Log
 
 import android.view.Menu
 import android.view.MenuItem
@@ -25,22 +28,21 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.drawToBitmap
+import com.google.firebase.ml.vision.objects.FirebaseVisionObject
+import com.google.firebase.ml.vision.objects.FirebaseVisionObjectDetectorOptions
 import kotlinx.android.synthetic.main.content_main.*
 
 class MainActivityK : AppCompatActivity() {
     private var mImageView: ImageView? = null
     private var img_uri: Uri? = null
-    private var mUploadButton: Button? = null
-    private var mTextButton: Button? = null
-    private var mTextView: TextView? = null
+    private var img_bitmap: Bitmap? = null
+    private lateinit var outputFileUri: Uri
+
 
     companion object {
-        //image pick code
-        private val IMAGE_PICK_CODE = 1000;
-
-        //Permission code
-        private val PERMISSION_CODE = 1001;
-        const val REQUEST_IMAGE_CAPTURE = 2
+        private const val REQUEST_IMAGE_CAPTURE = 2
+        private const val REQUEST_OBJ_FINDER = 2
         private const val MY_PERMISSIONS_REQUEST_READ_STORAGE = 10
         private const val MY_PERMISSIONS_REQUEST_CAMERA = 20
         private const val RESULT_LOAD_IMAGE = 1
@@ -49,11 +51,6 @@ class MainActivityK : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        mImageView = findViewById(R.id.imgView)
-        mTextButton = findViewById(R.id.textButton)
-        mUploadButton = findViewById(R.id.uploadButton)
-        mTextView = findViewById(R.id.textView)
 
         //GET IMAGE FROM GALLERY
         // val buttonLoadImage = findViewById(R.id.uploadButton) as Button
@@ -100,6 +97,9 @@ class MainActivityK : AppCompatActivity() {
 
         //GET TEXT
         textButton.setOnClickListener { runTextRecognition() }
+
+        //FIND OBJ
+        objectButton.setOnClickListener{ img_bitmap?.let { it1 -> runObjectDetection(it1) } }
     }
 
     private fun pickImageFromGallery() {
@@ -110,14 +110,75 @@ class MainActivityK : AppCompatActivity() {
     }
 
     private fun openCameraApp() {
-        val values = ContentValues()
+        /*val values = ContentValues()
         values.put(MediaStore.Images.Media.TITLE, "New Picture")
         values.put(MediaStore.Images.Media.DESCRIPTION, "From the Camera")
-        img_uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, img_uri)
-        startActivityForResult(cameraIntent, REQUEST_IMAGE_CAPTURE)
+        img_uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)*/
+        //val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        //cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, img_uri)
+        //startActivityForResult(cameraIntent, REQUEST_IMAGE_CAPTURE)
+
+        val values = ContentValues()
+        values.put(MediaStore.Images.Media.TITLE, "New photo")
+        outputFileUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+        val takePhotoIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        takePhotoIntent.putExtra(MediaStore.EXTRA_OUTPUT, outputFileUri)
+        startActivityForResult(takePhotoIntent, REQUEST_IMAGE_CAPTURE)
     }
+
+    /**
+     * MLKit Object Detection Function
+     */
+    private fun runObjectDetection(bitmap: Bitmap) {
+        // Step 1: create MLKit's VisionImage object
+        val image = FirebaseVisionImage.fromBitmap(bitmap)
+        // Step 2: acquire detector object
+        val options = FirebaseVisionObjectDetectorOptions.Builder()
+                .setDetectorMode(FirebaseVisionObjectDetectorOptions.SINGLE_IMAGE_MODE)
+                .enableMultipleObjects()
+                .enableClassification()
+                .build()
+        val detector = FirebaseVision.getInstance().getOnDeviceObjectDetector(options)
+        // Step 3: feed given image to detector and setup callback
+        detector.processImage(image)
+                .addOnSuccessListener {
+                    // Task completed successfully
+                    // Post-detection processing : draw result
+                    debugPrint(it)
+                  /*  val drawingView = DrawingView(applicationContext, it)
+                    drawingView.draw(Canvas(bitmap))
+                    runOnUiThread {
+                        imageView.setImageBitmap(bitmap)
+                    }*/
+                }
+                .addOnFailureListener {
+                    // Task failed with an exception
+                    Toast.makeText(
+                            baseContext, "Oops, something went wrong!",
+                            Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+    }
+
+    private fun debugPrint(visionObjects : List<FirebaseVisionObject>) {
+        val LOG_MOD = "MLKit-ODT"
+        for ((idx, obj) in visionObjects.withIndex()) {
+            val box = obj.boundingBox
+
+            Log.d(LOG_MOD, "Detected object: ${idx} ")
+            Log.d(LOG_MOD, "  Category: ${obj.classificationCategory}")
+            Log.d(LOG_MOD, "  trackingId: ${obj.trackingId}")
+          //  Log.d(LOG_MOD, "  entityId: ${obj.entityid}")
+            Log.d(LOG_MOD, "  boundingBox: (${box.left}, ${box.top}) - (${box.right},${box.bottom})")
+            if (obj.classificationCategory != FirebaseVisionObject.CATEGORY_UNKNOWN) {
+                val confidence: Int = obj.classificationConfidence!!.times(100).toInt()
+                Log.d(LOG_MOD, "  Confidence: ${confidence}%")
+            }
+        }
+    }
+
+
 
     //handle requested permission result
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -148,14 +209,6 @@ class MainActivityK : AppCompatActivity() {
 
 
     private fun runTextRecognition() {
-        /*
-        val image =
-            FirebaseVisionImage.fromBitmap((mImageView!!.drawable as BitmapDrawable).bitmap)
-        val recognizer = FirebaseVision.getInstance()
-            .onDeviceTextRecognizer
-        recognizer.processImage(image)
-            .addOnSuccessListener { texts -> processTextRecognitionResult(texts) }
-            .addOnFailureListener { e -> e.printStackTrace() }*/
         if (imgView.drawable != null) {
             textView.setText("")
             val bitmap = (imgView.drawable as BitmapDrawable).bitmap
@@ -186,13 +239,48 @@ class MainActivityK : AppCompatActivity() {
         }
     }
 
+    /**
+     * getCapturedImage():
+     *     Decodes and center crops the captured image from camera.
+     */
+    private fun getCapturedImage(): Bitmap {
+
+        val srcImage = FirebaseVisionImage
+                .fromFilePath(baseContext, outputFileUri).bitmap
+
+        // crop image to match imageView's aspect ratio
+        val scaleFactor = Math.min(
+                srcImage.width / imgView.width.toFloat(),
+                srcImage.height / imgView.height.toFloat()
+        )
+
+        val deltaWidth = (srcImage.width - imgView.width * scaleFactor).toInt()
+        val deltaHeight = (srcImage.height - imgView.height * scaleFactor).toInt()
+
+        val scaledImage = Bitmap.createBitmap(
+                srcImage, deltaWidth / 2, deltaHeight / 2,
+                srcImage.width - deltaWidth, srcImage.height - deltaHeight
+        )
+        srcImage.recycle()
+        return scaledImage
+
+    }
+
     //handle result of picked image
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK) {
-            mImageView!!.setImageURI(data?.data)
+            img_uri= data?.data
+            imgView.setImageURI(data?.data)
+            //img_bitmap = imgView.drawToBitmap()
         } else if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-            mImageView!!.setImageURI(img_uri)
+            //imgView.setImageURI(img_uri)
+           val image = getCapturedImage()
+            img_bitmap = image
+            imgView.setImageBitmap(image)
+
+        } else if (requestCode == REQUEST_OBJ_FINDER && resultCode == RESULT_OK) {
+            img_bitmap?.let { runObjectDetection(it) }
         }
     }
 
